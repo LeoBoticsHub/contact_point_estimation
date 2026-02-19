@@ -33,253 +33,365 @@
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include <ros/ros.h>
+// ? MODIFIED VERSION TO WORK WITH ROS2
+#include <rclcpp/rclcpp.hpp>
+#include <std_srvs/srv/empty.hpp>
+// #include <ros/ros.h>
+// #include <std_srvs/Empty.h>
+
 #include <contact_point_estimation/ContactPointEstimator.h>
 #include <contact_point_estimation/ContactPointEstimatorParams.h>
 #include <contact_point_estimation/SurfaceNormalEstimator.h>
 #include <contact_point_estimation/SurfaceNormalEstimatorParams.h>
 
-#include <geometry_msgs/WrenchStamped.h>
-#include <geometry_msgs/TwistStamped.h>
-#include <geometry_msgs/PointStamped.h>
-#include <geometry_msgs/Vector3Stamped.h>
-#include <std_srvs/Empty.h>
+#include <geometry_msgs/msg/wrench_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
+#include <geometry_msgs/msg/vector3_stamped.hpp>
 
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
 
 
 
-class ContactPointEstimationNode
+class ContactPointEstimationNode : public rclcpp::Node
 {
 public:
-    ros::NodeHandle n_;
-
-    /// declaration of topics to publish
-    ros::Publisher topicPub_ContactPointEstimate_;
-    ros::Publisher topicPub_SurfaceNormalEstimate_;
-
-    /// declaration of topics to subscribe, callback is called for new messages arriving
-    ros::Subscriber topicSub_FT_compensated_;
-    ros::Subscriber topicSub_Twist_FT_Sensor_;
-
-    /// declaration of service servers
-    ros::ServiceServer srvServer_Start_;
-    ros::ServiceServer srvServer_Stop_;
-
-	ros::Time last_publish_time;
-	ContactPointEstimatorParams *cpe_params;
-	ContactPointEstimator *cpe;
-
-	SurfaceNormalEstimatorParams *sne_params;
-	SurfaceNormalEstimator *sne;
-
-
-	ContactPointEstimationNode()
+	// ? MODIFIED VERSION TO WORK WITH ROS2
+	ContactPointEstimationNode() : Node("contact_point_estimation_node"),
+		m_received_ft(false),
+		m_received_twist(false),
+		m_run_estimator(false)
+    // ros::NodeHandle n_;
 	{
-		n_ = ros::NodeHandle("~");
-        m_received_ft = false;
-        m_run_estimator = false;
+		// ? PARAMETERS TO WORK IN ROS2 
+		declare_parameter<double>("gamma_r");
+		declare_parameter<double>("kappa_r");
+		declare_parameter<double>("beta_r");
+		declare_parameter<std::vector<double>>("initial_r");
+		declare_parameter<double>("gamma_n");
+		declare_parameter<double>("beta_n");
+		declare_parameter<std::vector<double>>("initial_n");
+		declare_parameter<double>("cpe_update_frequency");
+		declare_parameter<double>("sne_update_frequency");
 
-        cpe_params = NULL;
-        cpe = NULL;
+		// ? PUBLISHERS AND SUBSCRIBERS TO WORK IN ROS2
+		topicPub_ContactPointEstimate_ = this->create_publisher<geometry_msgs::msg::PointStamped>("contact_point_estimate", 10);
+		topicPub_SurfaceNormalEstimate_ = this->create_publisher<geometry_msgs::msg::Vector3Stamped>("surface_normal_estimate", 10);
 
-        sne_params = NULL;
-        sne = NULL;
+		topicSub_FT_compensated_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
+			"ft_compensated", 
+			10, 
+			std::bind(&ContactPointEstimationNode::topicCallback_FT_compensated, this, std::placeholders::_1));
+		topicSub_Twist_FT_Sensor_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+			"twist_ft_sensor",
+			10,
+			std::bind(&ContactPointEstimationNode::topicCallback_Twist_FT_Sensor, this, std::placeholders::_1));
 
-		topicPub_ContactPointEstimate_ = n_.advertise<geometry_msgs::PointStamped>("contact_point_estimate", 1);
-		topicPub_SurfaceNormalEstimate_ = n_.advertise<geometry_msgs::Vector3Stamped>("surface_normal_estimate", 1);
+		// ? SERVICES TO WORK IN ROS2
+		srvServer_Start_ = this->create_service<std_srvs::srv::Empty>(
+			"start",
+			std::bind(&ContactPointEstimationNode::srvCallback_Start, this, std::placeholders::_1, std::placeholders::_2));
+		srvServer_Stop_ = this->create_service<std_srvs::srv::Empty>(
+			"stop",
+			std::bind(&ContactPointEstimationNode::srvCallback_Stop, this, std::placeholders::_1, std::placeholders::_2));
 
-        topicSub_FT_compensated_ = n_.subscribe("ft_compensated", 1, &ContactPointEstimationNode::topicCallback_FT_compensated, this);
-
-        topicSub_Twist_FT_Sensor_ = n_.subscribe("twist_ft_sensor", 1, &ContactPointEstimationNode::topicCallback_Twist_FT_Sensor, this);
-
-        srvServer_Start_ = n_.advertiseService("start", &ContactPointEstimationNode::srvCallback_Start,
-				this);
-        srvServer_Stop_ = n_.advertiseService("stop", &ContactPointEstimationNode::srvCallback_Stop, this);
+        RCLCPP_INFO(get_logger(), "Contact Point Estimation Node (ROS2) ready");
 	}
+
+	// ContactPointEstimationNode()
+	// {
+	// 	n_ = ros::NodeHandle("~");
+    //     m_received_ft = false;
+    //     m_run_estimator = false;
+
+    //     cpe_params = NULL;
+    //     cpe = NULL;
+
+    //     sne_params = NULL;
+    //     sne = NULL;
+
+	// 	topicPub_ContactPointEstimate_ = n_.advertise<geometry_msgs::PointStamped>("contact_point_estimate", 1);
+	// 	topicPub_SurfaceNormalEstimate_ = n_.advertise<geometry_msgs::Vector3Stamped>("surface_normal_estimate", 1);
+
+    //     topicSub_FT_compensated_ = n_.subscribe("ft_compensated", 1, &ContactPointEstimationNode::topicCallback_FT_compensated, this);
+
+    //     topicSub_Twist_FT_Sensor_ = n_.subscribe("twist_ft_sensor", 1, &ContactPointEstimationNode::topicCallback_Twist_FT_Sensor, this);
+
+    //     srvServer_Start_ = n_.advertiseService("start", &ContactPointEstimationNode::srvCallback_Start,
+	// 			this);
+    //     srvServer_Stop_ = n_.advertiseService("stop", &ContactPointEstimationNode::srvCallback_Stop, this);
+	// }
 
 	~ContactPointEstimationNode()
 	{
-		delete cpe_params;
-		delete cpe;
-		delete sne_params;
-		delete sne;
+		m_run_estimator = false;
+
+		if (m_cpe_thread.joinable())
+			m_cpe_thread.join();
+
+		if (m_sne_thread.joinable())
+			m_sne_thread.join();
+
+		delete cpe_params_;
+		delete cpe_;
+		delete sne_params_;
+		delete sne_;
 	}
 
-    bool getEstimatorParameters()
-	{
-		double gamma_r;
-		if (n_.hasParam("gamma_r"))
-		{
-			n_.getParam("gamma_r", gamma_r);
-		}
 
-		else
-		{
-			ROS_ERROR("Parameter gamma_r not set, shutting down node...");
-			n_.shutdown();
-			return false;
-		}
+    bool loadParameters()
+    {
+		delete cpe_;
+		delete cpe_params_;
+		delete sne_;
+		delete sne_params_;
 
-		double kappa_r;
-		if (n_.hasParam("kappa_r"))
-		{
-			n_.getParam("kappa_r", kappa_r);
-		}
+		cpe_ = nullptr;
+		cpe_params_ = nullptr;
+		sne_ = nullptr;
+		sne_params_ = nullptr;
 
-		else
-		{
-			ROS_ERROR("Parameter kappa_r not set, shutting down node...");
-			n_.shutdown();
-			return false;
-		}
+        double gamma_r = get_parameter("gamma_r").as_double();
+        double kappa_r = get_parameter("kappa_r").as_double();
+        double beta_r  = get_parameter("beta_r").as_double();
+        double gamma_n = get_parameter("gamma_n").as_double();
+        double beta_n  = get_parameter("beta_n").as_double();
 
+        double cpe_freq = get_parameter("cpe_update_frequency").as_double();
+        double sne_freq = get_parameter("sne_update_frequency").as_double();
 
-		double beta_r;
-		if (n_.hasParam("beta_r"))
-		{
-			n_.getParam("beta_r", beta_r);
-		}
+        auto initial_r_vec =
+            get_parameter("initial_r").as_double_array();
+        auto initial_n_vec =
+            get_parameter("initial_n").as_double_array();
 
-		else
-		{
-			ROS_ERROR("Parameter beta_r not set, shutting down node...");
-			n_.shutdown();
-			return false;
-		}
-
-
-        /// Get initial estimate of the contact point
-		XmlRpc::XmlRpcValue initial_r_XmlRpc;
-		Vector3d initial_r;
-		if (n_.hasParam("initial_r"))
-		{
-			n_.getParam("initial_r", initial_r_XmlRpc);
-		}
-
-		else
-		{
-			ROS_ERROR("Parameter initial_r not set, shutting down node...");
-			n_.shutdown();
-			return false;
-		}
-
-		if(initial_r_XmlRpc.size()!=3)
-		{
-			ROS_ERROR("Wrong initial_r size.");
-			n_.shutdown();
-			return false;
-		}
-
-		/// Resize and assign of values to the initial_r
-		for (int i = 0; i < initial_r_XmlRpc.size(); i++)
-		{
-			initial_r(i) = (double)initial_r_XmlRpc[i];
-		}
-
-		double cpe_update_frequency;
-		if (n_.hasParam("cpe_update_frequency"))
-		{
-			n_.getParam("cpe_update_frequency", cpe_update_frequency);
-		}
-
-		else
-		{
-			ROS_ERROR("Parameter cpe_update_frequency not set, shutting down node...");
-			n_.shutdown();
-			return false;
-		}
-
-		double gamma_n;
-		if (n_.hasParam("gamma_n"))
-		{
-			n_.getParam("gamma_n", gamma_n);
-		}
-
-		else
-		{
-			ROS_ERROR("Parameter gamma_n not set, shutting down node...");
-			n_.shutdown();
-			return false;
-		}
-
-		double beta_n;
-		if (n_.hasParam("beta_n"))
-		{
-			n_.getParam("beta_n", beta_n);
-		}
-
-		else
-		{
-			ROS_ERROR("Parameter beta_n not set, shutting down node...");
-			n_.shutdown();
-			return false;
-		}
-
-        /// Get initial estimate of the surface normal
-		XmlRpc::XmlRpcValue initial_n_XmlRpc;
-		Vector3d initial_n;
-		if (n_.hasParam("initial_n"))
-		{
-			n_.getParam("initial_n", initial_n_XmlRpc);
-		}
-
-		else
-		{
-			ROS_ERROR("Parameter initial_n not set, shutting down node...");
-			n_.shutdown();
-			return false;
-		}
-
-		if(initial_n_XmlRpc.size()!=3)
-		{
-			ROS_ERROR("Wrong initial_n size.");
-			n_.shutdown();
-			return false;
-		}
-
-		/// Resize and assign of values to the initial_n
-		for (int i = 0; i < initial_n_XmlRpc.size(); i++)
-		{
-			initial_n(i) = (double)initial_n_XmlRpc[i];
-		}
-
-
-        double sne_update_frequency;
-        if (n_.hasParam("sne_update_frequency"))
+        if (initial_r_vec.size() != 3 || initial_n_vec.size() != 3)
         {
-            n_.getParam("sne_update_frequency", sne_update_frequency);
-        }
-
-        else
-        {
-            ROS_ERROR("Parameter sne_update_frequency not set, shutting down node...");
-            n_.shutdown();
+            RCLCPP_ERROR(get_logger(), "Initial vectors must have size 3");
             return false;
         }
 
-		bool ret = true;
-        cpe_params = new ContactPointEstimatorParams();
-        sne_params = new SurfaceNormalEstimatorParams();
+        Vector3d initial_r;
+        Vector3d initial_n;
 
-        cpe_params->setGammaR(gamma_r);
-        cpe_params->setKappaR(kappa_r);
-        cpe_params->setBetaR(beta_r);
-        cpe_params->setInitialR(initial_r);
+        for (int i = 0; i < 3; ++i)
+        {
+            initial_r(i) = initial_r_vec[i];
+            initial_n(i) = initial_n_vec[i];
+        }
 
-        sne_params->setGammaN(gamma_n);
-        sne_params->setBetaN(beta_n);
-        sne_params->setInitialN(initial_n);
+        cpe_params_ = new ContactPointEstimatorParams();
+        sne_params_ = new SurfaceNormalEstimatorParams();
 
-        cpe_params->setUpdateFrequency(cpe_update_frequency);
-        sne_params->setUpdateFrequency(sne_update_frequency);
+        cpe_params_->setGammaR(gamma_r);
+        cpe_params_->setKappaR(kappa_r);
+        cpe_params_->setBetaR(beta_r);
+        cpe_params_->setInitialR(initial_r);
+        cpe_params_->setUpdateFrequency(cpe_freq);
 
-		return ret;
+        sne_params_->setGammaN(gamma_n);
+        sne_params_->setBetaN(beta_n);
+        sne_params_->setInitialN(initial_n);
+        sne_params_->setUpdateFrequency(sne_freq);
 
-	}
+        cpe_ = new ContactPointEstimator(cpe_params_);
+        sne_ = new SurfaceNormalEstimator(sne_params_);
 
-	void topicCallback_FT_compensated(const geometry_msgs::WrenchStampedPtr &msg)
+        return true;
+    }
+
+    // bool getEstimatorParameters()
+	// {
+	// 	// ? MODIFIED VERSION TO WORK WITH ROS2
+	// 	// double gamma_r;
+	// 	// if (n_.hasParam("gamma_r"))
+	// 	// {
+	// 	// 	n_.getParam("gamma_r", gamma_r);
+	// 	// }
+	// 	this->declare_parameter<double>("gamma_r");
+	// 	double gamma_r = this->get_parameter("gamma_r").as_double();
+
+	// 	else
+	// 	{
+	// 		ROS_ERROR("Parameter gamma_r not set, shutting down node...");
+	// 		n_.shutdown();
+	// 		return false;
+	// 	}
+
+	// 	// double kappa_r;
+	// 	// if (n_.hasParam("kappa_r"))
+	// 	// {
+	// 	// 	n_.getParam("kappa_r", kappa_r);
+	// 	// }
+	// 	this->declare_parameter<double>("kappa_r");
+	// 	double kappa_r = this->get_parameter("kappa_r").as_double();
+
+	// 	// else
+	// 	// {
+	// 	// 	ROS_ERROR("Parameter kappa_r not set, shutting down node...");
+	// 	// 	n_.shutdown();
+	// 	// 	return false;
+	// 	// }
+	// 	else{
+	// 		RCLCPP_ERROR(this->get_logger(), "Parameter kappa_r not set, shutting down node...");
+	// 		rclcpp::shutdown();
+	// 		return false;
+	// 	}
+
+	// 	double beta_r;
+	// 	if (n_.hasParam("beta_r"))
+	// 	{
+	// 		n_.getParam("beta_r", beta_r);
+	// 	}
+
+	// 	else
+	// 	{
+	// 		ROS_ERROR("Parameter beta_r not set, shutting down node...");
+	// 		n_.shutdown();
+	// 		return false;
+	// 	}
+
+
+    //     /// Get initial estimate of the contact point
+	// 	XmlRpc::XmlRpcValue initial_r_XmlRpc;
+	// 	Vector3d initial_r;
+	// 	if (n_.hasParam("initial_r"))
+	// 	{
+	// 		n_.getParam("initial_r", initial_r_XmlRpc);
+	// 	}
+
+	// 	else
+	// 	{
+	// 		ROS_ERROR("Parameter initial_r not set, shutting down node...");
+	// 		n_.shutdown();
+	// 		return false;
+	// 	}
+
+	// 	if(initial_r_XmlRpc.size()!=3)
+	// 	{
+	// 		ROS_ERROR("Wrong initial_r size.");
+	// 		n_.shutdown();
+	// 		return false;
+	// 	}
+
+	// 	/// Resize and assign of values to the initial_r
+	// 	for (int i = 0; i < initial_r_XmlRpc.size(); i++)
+	// 	{
+	// 		initial_r(i) = (double)initial_r_XmlRpc[i];
+	// 	}
+
+	// 	double cpe_update_frequency;
+	// 	if (n_.hasParam("cpe_update_frequency"))
+	// 	{
+	// 		n_.getParam("cpe_update_frequency", cpe_update_frequency);
+	// 	}
+
+	// 	else
+	// 	{
+	// 		ROS_ERROR("Parameter cpe_update_frequency not set, shutting down node...");
+	// 		n_.shutdown();
+	// 		return false;
+	// 	}
+
+	// 	double gamma_n;
+	// 	if (n_.hasParam("gamma_n"))
+	// 	{
+	// 		n_.getParam("gamma_n", gamma_n);
+	// 	}
+
+	// 	else
+	// 	{
+	// 		ROS_ERROR("Parameter gamma_n not set, shutting down node...");
+	// 		n_.shutdown();
+	// 		return false;
+	// 	}
+
+	// 	double beta_n;
+	// 	if (n_.hasParam("beta_n"))
+	// 	{
+	// 		n_.getParam("beta_n", beta_n);
+	// 	}
+
+	// 	else
+	// 	{
+	// 		ROS_ERROR("Parameter beta_n not set, shutting down node...");
+	// 		n_.shutdown();
+	// 		return false;
+	// 	}
+
+    //     /// Get initial estimate of the surface normal
+	// 	XmlRpc::XmlRpcValue initial_n_XmlRpc;
+	// 	Vector3d initial_n;
+	// 	if (n_.hasParam("initial_n"))
+	// 	{
+	// 		n_.getParam("initial_n", initial_n_XmlRpc);
+	// 	}
+
+	// 	else
+	// 	{
+	// 		ROS_ERROR("Parameter initial_n not set, shutting down node...");
+	// 		n_.shutdown();
+	// 		return false;
+	// 	}
+
+	// 	if(initial_n_XmlRpc.size()!=3)
+	// 	{
+	// 		ROS_ERROR("Wrong initial_n size.");
+	// 		n_.shutdown();
+	// 		return false;
+	// 	}
+
+	// 	/// Resize and assign of values to the initial_n
+	// 	for (int i = 0; i < initial_n_XmlRpc.size(); i++)
+	// 	{
+	// 		initial_n(i) = (double)initial_n_XmlRpc[i];
+	// 	}
+
+
+    //     double sne_update_frequency;
+    //     if (n_.hasParam("sne_update_frequency"))
+    //     {
+    //         n_.getParam("sne_update_frequency", sne_update_frequency);
+    //     }
+
+    //     else
+    //     {
+    //         ROS_ERROR("Parameter sne_update_frequency not set, shutting down node...");
+    //         n_.shutdown();
+    //         return false;
+    //     }
+
+	// 	bool ret = true;
+    //     cpe_params = new ContactPointEstimatorParams();
+    //     sne_params = new SurfaceNormalEstimatorParams();
+
+    //     cpe_params->setGammaR(gamma_r);
+    //     cpe_params->setKappaR(kappa_r);
+    //     cpe_params->setBetaR(beta_r);
+    //     cpe_params->setInitialR(initial_r);
+
+    //     sne_params->setGammaN(gamma_n);
+    //     sne_params->setBetaN(beta_n);
+    //     sne_params->setInitialN(initial_n);
+
+    //     cpe_params->setUpdateFrequency(cpe_update_frequency);
+    //     sne_params->setUpdateFrequency(sne_update_frequency);
+
+	// 	return ret;
+
+	// }
+
+	// ? MODIFIED VERSION TO WORK WITH ROS2
+	// void topicCallback_FT_compensated(const geometry_msgs::WrenchStampedPtr &msg)
+	// {
+	// 	m_ft_mutex.lock();
+	// 	m_ft_compensated = *msg;
+	// 	m_ft_mutex.unlock();
+
+	// 	m_received_ft = true;
+	// }
+	void topicCallback_FT_compensated(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
 	{
 		m_ft_mutex.lock();
 		m_ft_compensated = *msg;
@@ -288,40 +400,82 @@ public:
 		m_received_ft = true;
 	}
 
-    void topicCallback_Twist_FT_Sensor(const geometry_msgs::TwistStampedPtr &msg)
-    {
-    	m_twist_mutex.lock();
-    	m_twist_ft_sensor = *msg;
-    	m_twist_mutex.unlock();
+    // void topicCallback_Twist_FT_Sensor(const geometry_msgs::TwistStampedPtr &msg)
+    // {
+    // 	m_twist_mutex.lock();
+    // 	m_twist_ft_sensor = *msg;
+    // 	m_twist_mutex.unlock();
 
-        m_received_twist = true;
-    }
-
-    bool srvCallback_Start(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+    //     m_received_twist = true;
+    // }
+	void topicCallback_Twist_FT_Sensor(const geometry_msgs::msg::TwistStamped::SharedPtr msg)
 	{
-    	ROS_INFO("Starting cpe + sne node");
-    	cpe->reset();
-    	sne->reset();
+		m_twist_mutex.lock();
+		m_twist_ft_sensor = *msg;
+		m_twist_mutex.unlock();
 
-    	getEstimatorParameters();
-    	m_run_estimator = true;
-    	m_cpe_thread = boost::thread(boost::bind(&ContactPointEstimationNode::CPEThreadFunction, this));
-    	m_sne_thread = boost::thread(boost::bind(&ContactPointEstimationNode::SNEThreadFunction, this));
-
-		return true;
+		m_received_twist = true;
 	}
 
-    bool srvCallback_Stop(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
-    {
-    	ROS_INFO("Stopping cpe + sne node");
+    // bool srvCallback_Start(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+	// {
+    // 	ROS_INFO("Starting cpe + sne node");
+    // 	cpe->reset();
+    // 	sne->reset();
 
-        m_run_estimator = false;
+    // 	getEstimatorParameters();
+    // 	m_run_estimator = true;
+    // 	m_cpe_thread = boost::thread(boost::bind(&ContactPointEstimationNode::CPEThreadFunction, this));
+    // 	m_sne_thread = boost::thread(boost::bind(&ContactPointEstimationNode::SNEThreadFunction, this));
 
-        m_received_ft = false;
-        m_received_twist = false;
+	// 	return true;
+	// }
+	void srvCallback_Start(const std_srvs::srv::Empty::Request::SharedPtr req, std_srvs::srv::Empty::Response::SharedPtr res)
+	{
+		if (m_run_estimator)
+		{
+			RCLCPP_WARN(get_logger(), "Estimators already running");
+			return;
+		}
+        RCLCPP_INFO(get_logger(), "Starting estimators");
 
-        return true;
-    }
+        if (!loadParameters())
+        {
+            RCLCPP_ERROR(get_logger(), "Parameter loading failed");
+            return;
+        }
+
+		cpe_->reset();
+		sne_->reset();
+
+		m_run_estimator = true;
+
+		m_cpe_thread = boost::thread(boost::bind(&ContactPointEstimationNode::CPEThreadFunction, this));
+		m_sne_thread = boost::thread(boost::bind(&ContactPointEstimationNode::SNEThreadFunction, this));
+
+	}
+
+    // bool srvCallback_Stop(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
+    // {
+    // 	ROS_INFO("Stopping cpe + sne node");
+
+    //     m_run_estimator = false;
+
+    //     m_received_ft = false;
+    //     m_received_twist = false;
+
+    //     return true;
+    // }
+	void srvCallback_Stop(const std_srvs::srv::Empty::Request::SharedPtr req, std_srvs::srv::Empty::Response::SharedPtr res)
+	{
+        RCLCPP_INFO(get_logger(), "Stopping cpe + sne node");
+
+		m_run_estimator = false;
+
+		m_received_ft = false;
+		m_received_twist = false;
+
+	}
 
 
     bool estimatorRunning()
@@ -331,7 +485,7 @@ public:
 
     void CPEThreadFunction()
     {
-    	static ros::Rate loop_rate(cpe_params->getUpdateFrequency());
+    	rclcpp::Rate loop_rate(cpe_params_->getUpdateFrequency());
     	for(;;)
     	{
     		if(!m_run_estimator)
@@ -341,16 +495,16 @@ public:
 
     		else if(!m_received_ft)
     		{
-    			static ros::Time t = ros::Time::now();
-    			if((ros::Time::now()-t).toSec()>1.0)
+    			static rclcpp::Time t = this->now();
+    			if((this->now() - t).seconds() > 1.0)
     			{
-    				ROS_ERROR("Haven't received FT sensor measurements");
-    				t = ros::Time::now();
+    				RCLCPP_ERROR(get_logger(), "Haven't received FT sensor measurements");
+    				t = this->now();
     			}
 
     		}
 
-    		else if(!n_.ok())
+    		else if(!rclcpp::ok())
     		{
     			return;
     		}
@@ -358,10 +512,10 @@ public:
     		else
     		{
     			m_ft_mutex.lock();
-    			cpe->update(m_ft_compensated);
+    			cpe_->update(m_ft_compensated);
     			m_ft_mutex.unlock();
 
-    			topicPub_ContactPointEstimate_.publish(cpe->getEstimate());
+    			topicPub_ContactPointEstimate_->publish(cpe_->getEstimate());
     			loop_rate.sleep();
     		}
     	}
@@ -369,7 +523,7 @@ public:
 
     void SNEThreadFunction()
     {
-    	static ros::Rate loop_rate(sne_params->getUpdateFrequency());
+    	rclcpp::Rate loop_rate(sne_params_->getUpdateFrequency());
     	for(;;)
     	{
     		if(!m_run_estimator)
@@ -379,15 +533,15 @@ public:
 
     		else if(!m_received_twist)
     		{
-    			static ros::Time t = ros::Time::now();
-    			if((ros::Time::now()-t).toSec()>1.0)
-    			{
-    				ROS_ERROR("Haven't received FT sensor twist");
-    				t = ros::Time::now();
-    			}
+				static rclcpp::Time t = this->now();
+				if ((this->now() - t).seconds() > 1.0)
+				{
+					RCLCPP_ERROR(get_logger(), "Haven't received FT sensor measurements");
+					t = this->now();
+				}
     		}
 
-    		else if(!n_.ok())
+    		else if(!rclcpp::ok())
     		{
     			return;
     		}
@@ -395,10 +549,10 @@ public:
     		else
     		{
     			m_twist_mutex.lock();
-    			sne->update(m_twist_ft_sensor);
+    			sne_->update(m_twist_ft_sensor);
     			m_twist_mutex.unlock();
 
-    			topicPub_SurfaceNormalEstimate_.publish(sne->getEstimate());
+    			topicPub_SurfaceNormalEstimate_->publish(sne_->getEstimate());
     			loop_rate.sleep();
     		}
     	}
@@ -409,8 +563,8 @@ public:
 
 private:
 
-    geometry_msgs::WrenchStamped m_ft_compensated;
-    geometry_msgs::TwistStamped m_twist_ft_sensor;
+    geometry_msgs::msg::WrenchStamped m_ft_compensated;
+    geometry_msgs::msg::TwistStamped m_twist_ft_sensor;
 
     boost::mutex m_ft_mutex;
     boost::mutex m_twist_mutex;
@@ -422,31 +576,76 @@ private:
     bool m_received_twist;
 
     bool m_run_estimator;
+    /// declaration of topics to publish
+	// ? MODIFIED VERSION TO WORK WITH ROS2
+	rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr topicPub_ContactPointEstimate_;
+	rclcpp::Publisher<geometry_msgs::msg::Vector3Stamped>::SharedPtr topicPub_SurfaceNormalEstimate_;
+
+
+    // ros::Publisher topicPub_ContactPointEstimate_;
+    // ros::Publisher topicPub_SurfaceNormalEstimate_;
+
+    /// declaration of topics to subscribe, callback is called for new messages arriving
+	// ? MODIFIED VERSION TO WORK WITH ROS2
+	rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr topicSub_FT_compensated_;
+	rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr topicSub_Twist_FT_Sensor_;
+
+    // ros::Subscriber topicSub_FT_compensated_;
+    // ros::Subscriber topicSub_Twist_FT_Sensor_;
+
+    /// declaration of service servers
+	// ? MODIFIED VERSION TO WORK WITH ROS2
+	rclcpp::Service<std_srvs::srv::Empty>::SharedPtr srvServer_Start_;
+	rclcpp::Service<std_srvs::srv::Empty>::SharedPtr srvServer_Stop_;
+
+    // ros::ServiceServer srvServer_Start_;
+    // ros::ServiceServer srvServer_Stop_;
+
+	// ? MODIFIED VERSION TO WORK WITH ROS2
+	// ros::Time last_publish_time;
+	// rclcpp::Time last_publish_time;
+
+	ContactPointEstimatorParams *cpe_params_{nullptr};
+	ContactPointEstimator *cpe_{nullptr};
+
+	SurfaceNormalEstimatorParams *sne_params_{nullptr};
+	SurfaceNormalEstimator *sne_{nullptr};
 };
 
 
 int main(int argc, char **argv)
 {
-	ros::init(argc, argv, "contact_point_estimation_node");
+	// ? MODIFIED VERSION TO WORK WITH ROS2
+	// ros::init(argc, argv, "contact_point_estimation_node");
 
-	ContactPointEstimationNode cpe_node;
+	// ContactPointEstimationNode cpe_node;
 
-	if(!cpe_node.getEstimatorParameters())
-	{
-		cpe_node.n_.shutdown();
-		return 0;
-	}
+	// if(!cpe_node.getEstimatorParameters())
+	// {
+	// 	cpe_node.n_.shutdown();
+	// 	return 0;
+	// }
 
 
-	cpe_node.cpe = new ContactPointEstimator(cpe_node.cpe_params);
-	cpe_node.sne = new SurfaceNormalEstimator(cpe_node.sne_params);
+	// cpe_node.cpe = new ContactPointEstimator(cpe_node.cpe_params);
+	// cpe_node.sne = new SurfaceNormalEstimator(cpe_node.sne_params);
 
-    ros::AsyncSpinner s(4);
-    s.start();
+    // ros::AsyncSpinner s(4);
+    // s.start();
 
-    ros::waitForShutdown();
+    // ros::waitForShutdown();
 
-	return 0;
+	// return 0;
+    rclcpp::init(argc, argv);
+
+    auto node = std::make_shared<ContactPointEstimationNode>();
+
+    rclcpp::executors::MultiThreadedExecutor executor;
+    executor.add_node(node);
+    executor.spin();
+
+    rclcpp::shutdown();
+    return 0;
 }
 
 
