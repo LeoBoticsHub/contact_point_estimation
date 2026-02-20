@@ -34,69 +34,86 @@
 */
 
 #include <contact_point_estimation/SurfaceTracingController.h>
-#include <eigen_utils/eigen_utils.h>
+#include <Eigen/Dense>
 
+using Eigen::Vector3d;
+using Eigen::Matrix3d;
+using Eigen::Matrix;
 
+// Utility function to compute orthogonal projection matrix P = I - n*n^T
+static Matrix3d orthProjMatrix(const Vector3d &n)
+{
+    return Matrix3d::Identity() - n * n.transpose();
+}
 
 SurfaceTracingController::SurfaceTracingController()
 {
-	m_f_n_error_integral = 0.0;
+    m_f_n_error_integral = 0.0;
 }
 
 SurfaceTracingController::~SurfaceTracingController()
 {
-
 }
 
 void SurfaceTracingController::setNormalForceCompensationGains(double alpha_p,
-		double alpha_i)
+        double alpha_i)
 {
-	m_alpha_p = alpha_p;
-	m_alpha_i = alpha_i;
+    m_alpha_p = alpha_p;
+    m_alpha_i = alpha_i;
 }
 
 void SurfaceTracingController::setTrajectoryPosControlGain(double alpha)
 {
-	m_alpha = alpha;
+    m_alpha = alpha;
 }
 
 void SurfaceTracingController::setDesiredNormalForce(double f_d)
 {
-	m_f_d = f_d;
+    m_f_d = f_d;
 }
 
 void SurfaceTracingController::setControlFrequency(double control_freq)
 {
-	m_control_freq = control_freq;
+    m_control_freq = control_freq;
 }
 
 double SurfaceTracingController::getControlFrequency()
 {
-	return m_control_freq;
+    return m_control_freq;
 }
 
 void SurfaceTracingController::reset()
 {
-	m_f_n_error_integral = 0.0;
+    m_f_n_error_integral = 0.0;
 }
 
 Vector3d SurfaceTracingController::controlSignal(
-		const Vector3d& surface_normal, const Matrix<double, 6, 1>ft_compensated,
-		const Vector3d &p, const Vector3d& p_d, const Vector3d& p_dot_d)
+        const Vector3d& surface_normal,
+        const Matrix<double, 6, 1>& ft_compensated,
+        const Vector3d &p,
+        const Vector3d& p_d,
+        const Vector3d& p_dot_d)
 {
-	Vector3d force = ft_compensated.topRows(3);
+    // Extract force component from top 3 elements of FT vector
+    Vector3d force = ft_compensated.topRows(3);
 
-	double f_n = (surface_normal.dot(force));
-	double f_n_error = f_n - m_f_d;
-	double dt = 1/m_control_freq;
+    // Normal force error computation
+    double f_n = surface_normal.dot(force);
+    double f_n_error = f_n - m_f_d;
+    double dt = 1.0 / m_control_freq;
 
-	m_f_n_error_integral = m_f_n_error_integral + f_n_error*dt;
-	double vf = m_alpha_i*m_f_n_error_integral + m_alpha_p*f_n_error;
+    m_f_n_error_integral += f_n_error * dt;
+    double vf = m_alpha_i * m_f_n_error_integral + m_alpha_p * f_n_error;
 
-	Vector3d v_d = p_dot_d - m_alpha*(p-p_d);
-	Matrix<double, 3, 3>Pbar_n = eigen_utils::orthProjMatrix(surface_normal);
+    // Desired velocity with trajectory tracking
+    Vector3d v_d = p_dot_d - m_alpha * (p - p_d);
 
-	Vector3d u = Pbar_n*v_d + surface_normal*vf;
+    // Orthogonal projection matrix P = I - n*n^T
+    Matrix3d Pbar_n = orthProjMatrix(surface_normal);
 
-	return u;
+    // Control signal
+    Vector3d u = Pbar_n * v_d + surface_normal * vf;
+
+    return u;
 }
+

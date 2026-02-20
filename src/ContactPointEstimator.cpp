@@ -35,7 +35,7 @@
 
 
 #include <contact_point_estimation/ContactPointEstimator.h>
-#include <eigen_utils/eigen_utils.h>
+// #include <eigen_utils/eigen_utils.h>
 
 
 ContactPointEstimator::ContactPointEstimator(ContactPointEstimatorParams *params)
@@ -93,7 +93,7 @@ PointStamped ContactPointEstimator::getEstimate() const
 {
 	PointStamped contact_point;
 	contact_point.header.frame_id = m_ft_compensated.header.frame_id;
-	contact_point.header.stamp = ros::Time::now();
+	contact_point.header.stamp = rclcpp::Clock().now();
 	contact_point.point.x = -m_contact_point_estimate(0);
 	contact_point.point.y = -m_contact_point_estimate(1);
 	contact_point.point.z = -m_contact_point_estimate(2);
@@ -101,12 +101,21 @@ PointStamped ContactPointEstimator::getEstimate() const
 	return contact_point;
 }
 
+Matrix3d ContactPointEstimator::skewSymmetric(const Vector3d& v)
+{
+    Matrix3d m;
+    m <<  0,     -v.z(),  v.y(),
+          v.z(),  0,     -v.x(),
+         -v.y(), v.x(),   0;
+    return m;
+}
+
 void ContactPointEstimator::updateLr(const Vector3d& force)
 {
 	double beta_r = m_params->getBetaR();
 	double cpe_update_frequency = m_params->getUpdateFrequency();
 
-	Matrix3d Sf = eigen_utils::skewSymmetric(force);
+	Matrix3d Sf = skewSymmetric(force);
 
 	m_Lr = m_Lr + (-beta_r*m_Lr - Sf*Sf)*(1/cpe_update_frequency);
 	m_Lr = 0.5*(m_Lr + m_Lr.transpose()); // to keep it symmetric
@@ -117,7 +126,7 @@ void ContactPointEstimator::updatecr(const Vector3d &force, const Vector3d& torq
 	double beta_r = m_params->getBetaR();
 	double cpe_update_frequency = m_params->getUpdateFrequency();
 
-	Matrix3d Sf = eigen_utils::skewSymmetric(force);
+	Matrix3d Sf = skewSymmetric(force);
 
 	m_cr = m_cr + (-beta_r*m_cr + Sf*torque)*(1/cpe_update_frequency);
 }

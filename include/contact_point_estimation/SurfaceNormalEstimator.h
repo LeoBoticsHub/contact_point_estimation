@@ -39,14 +39,21 @@
 
 #include <contact_point_estimation/SurfaceNormalEstimatorParams.h>
 #include <eigen3/Eigen/Core>
-#include <geometry_msgs/WrenchStamped.h>
-#include <geometry_msgs/Vector3.h>
-#include <geometry_msgs/TwistStamped.h>
-#include <geometry_msgs/PointStamped.h>
-#include <geometry_msgs/Vector3Stamped.h>
+// ? MODIFIED VERSION TO WORK WITH ROS2
+// #include <geometry_msgs/WrenchStamped.h>
+// #include <geometry_msgs/Vector3.h>
+// #include <geometry_msgs/TwistStamped.h>
+// #include <geometry_msgs/PointStamped.h>
+// #include <geometry_msgs/Vector3Stamped.h>
+#include <rclcpp/rclcpp.hpp>
+#include <geometry_msgs/msg/wrench_stamped.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
+#include <geometry_msgs/msg/vector3_stamped.hpp>
+#include <geometry_msgs/msg/vector3.hpp>
 
 using namespace Eigen;
-using namespace geometry_msgs;
+using namespace geometry_msgs::msg;
 using namespace std_msgs;
 
 class SurfaceNormalEstimator

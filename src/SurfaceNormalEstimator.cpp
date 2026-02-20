@@ -35,8 +35,6 @@
 
 
 #include <contact_point_estimation/SurfaceNormalEstimator.h>
-#include <eigen_utils/eigen_utils.h>
-
 
 SurfaceNormalEstimator::SurfaceNormalEstimator(SurfaceNormalEstimatorParams *params)
 {
@@ -54,19 +52,30 @@ SurfaceNormalEstimator::~SurfaceNormalEstimator()
 
 void SurfaceNormalEstimator::update(const TwistStamped &twist_ft_sensor)
 {
-	double gamma_n = m_params->getGammaN();
-	double sne_update_frequency = m_params->getUpdateFrequency();
-	Matrix3d Pbar_n = eigen_utils::orthProjMatrix(m_surface_normal_estimate);
-	m_twist_ft_sensor = twist_ft_sensor;
+    double gamma_n = m_params->getGammaN();
+    double sne_update_frequency = m_params->getUpdateFrequency();
 
-	Vector3d vel(twist_ft_sensor.twist.linear.x, 
-		     twist_ft_sensor.twist.linear.y, 
-		     twist_ft_sensor.twist.linear.z);
+    Matrix3d Pbar_n =
+        Matrix3d::Identity() -
+        m_surface_normal_estimate *
+        m_surface_normal_estimate.transpose();
 
-	updateLn(vel);
+    m_twist_ft_sensor = twist_ft_sensor;
 
-	m_surface_normal_estimate = m_surface_normal_estimate - gamma_n*Pbar_n*m_Ln*m_surface_normal_estimate*(1/sne_update_frequency);
-	m_surface_normal_estimate.normalize();
+    Vector3d vel(
+        twist_ft_sensor.twist.linear.x,
+        twist_ft_sensor.twist.linear.y,
+        twist_ft_sensor.twist.linear.z);
+
+    updateLn(vel);
+
+    m_surface_normal_estimate =
+        m_surface_normal_estimate -
+        gamma_n * Pbar_n * m_Ln *
+        m_surface_normal_estimate *
+        (1.0 / sne_update_frequency);
+
+    m_surface_normal_estimate.normalize();
 }
 
 
@@ -81,7 +90,7 @@ Vector3Stamped SurfaceNormalEstimator::getEstimate() const
 {
 	Vector3Stamped surface_normal;
 	surface_normal.header.frame_id = m_twist_ft_sensor.header.frame_id;
-	surface_normal.header.stamp = ros::Time::now();
+  surface_normal.header.stamp = rclcpp::Clock().now();
 	surface_normal.vector.x = m_surface_normal_estimate(0);
 	surface_normal.vector.y = m_surface_normal_estimate(1);
 	surface_normal.vector.z = m_surface_normal_estimate(2);

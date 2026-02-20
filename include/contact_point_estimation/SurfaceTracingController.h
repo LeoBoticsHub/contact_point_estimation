@@ -36,58 +36,54 @@
 #ifndef SURFACETRACINGCONTROLLER_H_
 #define SURFACETRACINGCONTROLLER_H_
 
-#include <eigen3/Eigen/Core>
-
-using namespace Eigen;
+#include <Eigen/Dense>
 
 // Surface tracing controller with PI force compensation
 class SurfaceTracingController
 {
 public:
-	SurfaceTracingController();
-	virtual ~SurfaceTracingController();
+    SurfaceTracingController();
+    virtual ~SurfaceTracingController();
 
-	// set controller parameters
-	void setNormalForceCompensationGains(double alpha_p, double alpha_i);
-	void setTrajectoryPosControlGain(double alpha);
-	void setDesiredNormalForce(double f_d);
-	void setControlFrequency(double control_freq);
+    // set controller parameters
+    void setNormalForceCompensationGains(double alpha_p, double alpha_i);
+    void setTrajectoryPosControlGain(double alpha);
+    void setDesiredNormalForce(double f_d);
+    void setControlFrequency(double control_freq);
 
-	// get controller parameters
-	double getControlFrequency();
+    // get controller parameters
+    double getControlFrequency();
 
-	// resets the controller (integrators)
-	void reset();
+    // resets the controller (integrators)
+    void reset();
 
-	// Calculates the control signal (translational velocity) of the force-torque sensor for surface tracing.
-	// Rotational velocity is not considered, must be set to zero when sending commands to the robot.
-	// The twist is expressed in same reference frame as the inputs, thus it is
-	// assumed that all input arguments are expressed in the same frame (e.g. the robot base frame)
-	//
-	// surface_normal: 3D vector representing the surface normal.
-	//                 Can be estimated through the contact point estimator class.
-	// ft_compensated: gravity compensated force-torque measurement.
-	// p: current position of the force-torque sensor
-	// p_d: desired FT sensor position. Comes from trajectory generator. Only translational part is used.
-	// p_dot_d: desired FT sensor twist. Comes from trajectory generator. Only translational part is used.
-	Vector3d controlSignal(const Vector3d &surface_normal,
-			const Matrix<double, 6, 1> ft_compensated,
-			const Vector3d &p,
-			const Vector3d &p_d,
-			const Vector3d &p_dot_d);
-
+    // Calculates the control signal (translational velocity) of the force-torque sensor for surface tracing.
+    // Rotational velocity is not considered, must be set to zero when sending commands to the robot.
+    // The twist is expressed in same reference frame as the inputs, thus it is
+    // assumed that all input arguments are expressed in the same frame (e.g. the robot base frame)
+    //
+    // surface_normal: 3D vector representing the surface normal.
+    //                 Can be estimated through the contact point estimator class.
+    // ft_compensated: gravity compensated force-torque measurement.
+    // p: current position of the force-torque sensor
+    // p_d: desired FT sensor position. Comes from trajectory generator. Only translational part is used.
+    // p_dot_d: desired FT sensor twist. Comes from trajectory generator. Only translational part is used.
+    Eigen::Vector3d controlSignal(
+            const Eigen::Vector3d &surface_normal,
+            const Eigen::Matrix<double, 6, 1> &ft_compensated,
+            const Eigen::Vector3d &p,
+            const Eigen::Vector3d &p_d,
+            const Eigen::Vector3d &p_dot_d);
 
 private:
+    // controller parameters
+    double m_alpha_p;
+    double m_alpha_i;
+    double m_alpha;
+    double m_f_d;
+    double m_control_freq;
 
-	// controller parameters
-	double m_alpha_p;
-	double m_alpha_i;
-	double m_alpha;
-	double m_f_d;
-	double m_control_freq;
-
-	double m_f_n_error_integral;
-
+    double m_f_n_error_integral;
 };
 
 #endif /* SURFACETRACINGCONTROLLER_H_ */

@@ -65,16 +65,25 @@ public:
     // ros::NodeHandle n_;
 	{
 		// ? PARAMETERS TO WORK IN ROS2 
-		declare_parameter<double>("gamma_r");
-		declare_parameter<double>("kappa_r");
-		declare_parameter<double>("beta_r");
-		declare_parameter<std::vector<double>>("initial_r");
-		declare_parameter<double>("gamma_n");
-		declare_parameter<double>("beta_n");
-		declare_parameter<std::vector<double>>("initial_n");
-		declare_parameter<double>("cpe_update_frequency");
-		declare_parameter<double>("sne_update_frequency");
-
+		// declare_parameter<double>("gamma_r");
+		// declare_parameter<double>("kappa_r");
+		// declare_parameter<double>("beta_r");
+		// declare_parameter<std::vector<double>>("initial_r");
+		// declare_parameter<double>("gamma_n");
+		// declare_parameter<double>("beta_n");
+		// declare_parameter<std::vector<double>>("initial_n");
+		// declare_parameter<double>("cpe_update_frequency");
+		// declare_parameter<double>("sne_update_frequency");
+		declare_parameter<double>("gamma_r", 7.0);
+		declare_parameter<double>("kappa_r", 0.0);
+		declare_parameter<double>("beta_r", 0.2);
+		declare_parameter<std::vector<double>>("initial_r", {0.2,0.2,0.1});
+		declare_parameter<double>("gamma_n", 0.0);
+		declare_parameter<double>("beta_n", 0.0);
+		declare_parameter<std::vector<double>>("initial_n", {0.0084,-0.0577,0.9983});
+		declare_parameter<double>("cpe_update_frequency", 650.0);
+		declare_parameter<double>("sne_update_frequency", 150.0);
+		
 		// ? PUBLISHERS AND SUBSCRIBERS TO WORK IN ROS2
 		topicPub_ContactPointEstimate_ = this->create_publisher<geometry_msgs::msg::PointStamped>("contact_point_estimate", 10);
 		topicPub_SurfaceNormalEstimate_ = this->create_publisher<geometry_msgs::msg::Vector3Stamped>("surface_normal_estimate", 10);
