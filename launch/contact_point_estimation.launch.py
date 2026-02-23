@@ -15,7 +15,6 @@ def generate_launch_description():
     contact_point_node = Node(
         package='contact_point_estimation',
         executable='contact_point_estimation_node',
-        name='contact_point_estimation',
         output='screen',
         parameters=[cpe_yaml, sne_yaml]
     )
