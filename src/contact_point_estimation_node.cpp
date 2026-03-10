@@ -205,8 +205,8 @@ public:
 		if(sim_)
 		{
 			 RCLCPP_INFO(get_logger(), "Running in simulation mode, subscribing to ft_sensor_sim topic");
-			topicSub_FT_Sensor_Sim_ = this->create_subscription<geometry_msgs::msg::Wrench>(
-				"/ur_ati_45_sensor_joint/sensor/force_torque_sensor/forcetorque",
+			topicSub_FT_Sensor_Sim_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
+				"/filtered_ee_wrench_wrt_sensor_frame",
 				10,
 				std::bind(&ContactPointEstimationNode::topicCallback_FT_Sensor_Sim, this, std::placeholders::_1));
 		}
@@ -433,16 +433,26 @@ public:
 	// 	m_received_ft = true;
 	// }
 
-	void topicCallback_FT_Sensor_Sim(const geometry_msgs::msg::Wrench::SharedPtr msg)
+	void topicCallback_FT_Sensor_Sim(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
 	{
 		m_ft_mutex.lock();
 		// ? Add timestamp and frame_id to the simulated wrench message
+		m_ft_compensated = *msg;
 		m_ft_compensated.header.stamp = this->now();
 		m_ft_compensated.header.frame_id = "ur_ati_45_sensor_link";
-		m_ft_compensated.wrench = *msg;
+		// m_ft_compensated.wrench = *msg;
 		m_ft_mutex.unlock();
 
 		m_received_ft = true;
+
+		if (abs(msg ->wrench.force.z) < 0.01)
+		{
+			no_contact_ = true;
+		}
+		else
+		{
+			no_contact_ = false;
+		}
 	}
 
 	void topicCallback_FT_compensated(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
@@ -516,7 +526,7 @@ public:
     // bool srvCallback_Stop(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
     // {
     // 	ROS_INFO("Stopping cpe + sne node");
-
+//
     //     m_run_estimator = false;
 
     //     m_received_ft = false;
@@ -607,7 +617,10 @@ public:
     		else
     		{
     			m_twist_mutex.lock();
-    			sne_->update(m_twist_ft_sensor);
+				if(!no_contact_)
+				{
+    				sne_->update(m_twist_ft_sensor);
+				}
     			m_twist_mutex.unlock();
 
     			topicPub_SurfaceNormalEstimate_->publish(sne_->getEstimate());
@@ -634,6 +647,7 @@ private:
     bool m_received_twist;
 
     bool m_run_estimator;
+	bool no_contact_ = true;
 
 	bool sim_;
     /// declaration of topics to publish
@@ -652,7 +666,7 @@ private:
 	// ? Modified to work with kinematic tools
 	rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr topicSub_Twist_FT_Sensor_;
 
-	rclcpp::Subscription<geometry_msgs::msg::Wrench>::SharedPtr topicSub_FT_Sensor_Sim_;
+	rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr topicSub_FT_Sensor_Sim_;
 
     // ros::Subscriber topicSub_FT_compensated_;
     // ros::Subscriber topicSub_Twist_FT_Sensor_;
