@@ -204,7 +204,7 @@ public:
 
 		if(sim_)
 		{
-			 RCLCPP_INFO(get_logger(), "Running in simulation mode, subscribing to ft_sensor_sim topic");
+			RCLCPP_INFO(get_logger(), "Running in simulation mode, subscribing to ft_sensor_sim topic");
 			topicSub_FT_Sensor_Sim_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
 				"/filtered_ee_wrench_wrt_sensor_frame",
 				10,
@@ -220,7 +220,7 @@ public:
 		}
 
 		topicSub_Twist_FT_Sensor_ = this->create_subscription<geometry_msgs::msg::Twist>(
-			"/cartesian_velocity_base_frame_feedback",
+			"/filtered_cartesian_velocity_base_frame_feedback",
 			10,
 			std::bind(&ContactPointEstimationNode::topicCallback_Twist_FT_Sensor, this, std::placeholders::_1));
 
