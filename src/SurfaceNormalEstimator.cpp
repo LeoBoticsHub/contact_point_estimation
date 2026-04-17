@@ -43,6 +43,15 @@ SurfaceNormalEstimator::SurfaceNormalEstimator(SurfaceNormalEstimatorParams *par
 	m_surface_normal_estimate = m_params->getInitialN();
 	m_Ln = Matrix3d::Zero();
 
+  // print parameters
+  RCLCPP_INFO(rclcpp::get_logger("SurfaceNormalEstimator"), "Surface Normal Estimator parameters: gamma_n=%.2f, beta_n=%.2f, update_frequency=%.2f, initial_n=[%.4f, %.4f, %.4f]",
+              m_params->getGammaN(),
+              m_params->getBetaN(),
+              m_params->getUpdateFrequency(),
+              m_surface_normal_estimate(0),
+              m_surface_normal_estimate(1),
+              m_surface_normal_estimate(2));
+
 }
 
 SurfaceNormalEstimator::~SurfaceNormalEstimator()
@@ -103,5 +112,5 @@ void SurfaceNormalEstimator::updateLn(const Vector3d &v_ft)
 	double beta_n = m_params->getBetaN();
 	double sne_update_frequency = m_params->getUpdateFrequency();
 
-	m_Ln = m_Ln + (-beta_n*m_Ln + (v_ft)*((v_ft).transpose()))*(1/sne_update_frequency);
+	m_Ln = m_Ln + (-beta_n*m_Ln + (v_ft)*((v_ft).transpose()) / (1.0 + v_ft.squaredNorm()))*(1/sne_update_frequency);
 }
