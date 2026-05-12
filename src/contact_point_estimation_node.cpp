@@ -78,7 +78,7 @@ public:
 		declare_parameter<double>("kappa_r", 0.0);
 		declare_parameter<double>("beta_r", 0.2);
 		declare_parameter<std::vector<double>>("initial_r", {0.2,0.2,0.1});
-		declare_parameter<bool>("sim", true);
+		// declare_parameter<bool>("sim", true);
 		declare_parameter<double>("gamma_n", 0.0);
 		declare_parameter<double>("beta_n", 0.0);
 		declare_parameter<std::vector<double>>("initial_n", {0.0084,-0.0577,0.9983});
@@ -98,10 +98,10 @@ public:
 		// 	"ft_compensated", 
 		// 	10, 
 		// 	std::bind(&ContactPointEstimationNode::topicCallback_FT_compensated, this, std::placeholders::_1));
-		// topicSub_Twist_FT_Sensor_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
+		// topicSub_Twist_tcp_end_effector_ = this->create_subscription<geometry_msgs::msg::TwistStamped>(
 		// 	"twist_ft_sensor",
 		// 	10,
-		// 	std::bind(&ContactPointEstimationNode::topicCallback_Twist_FT_Sensor, this, std::placeholders::_1));
+		// 	std::bind(&ContactPointEstimationNode::topicCallback_Twist_TCP_end_effector, this, std::placeholders::_1));
 
 		// ? SERVICES TO WORK IN ROS2
 		srvServer_Start_ = this->create_service<std_srvs::srv::Empty>(
@@ -131,7 +131,7 @@ public:
 
     //     topicSub_FT_compensated_ = n_.subscribe("ft_compensated", 1, &ContactPointEstimationNode::topicCallback_FT_compensated, this);
 
-    //     topicSub_Twist_FT_Sensor_ = n_.subscribe("twist_ft_sensor", 1, &ContactPointEstimationNode::topicCallback_Twist_FT_Sensor, this);
+    //     topicSub_Twist_tcp_end_effector_ = n_.subscribe("twist_ft_sensor", 1, &ContactPointEstimationNode::topicCallback_Twist_TCP_end_effector, this);
 
     //     srvServer_Start_ = n_.advertiseService("start", &ContactPointEstimationNode::srvCallback_Start,
 	// 			this);
@@ -170,7 +170,7 @@ public:
         double gamma_r = get_parameter("gamma_r").as_double();
         double kappa_r = get_parameter("kappa_r").as_double();
         double beta_r  = get_parameter("beta_r").as_double();
-		bool sim = get_parameter("sim").as_bool();
+		// bool sim = get_parameter("sim").as_bool();
         double gamma_n = get_parameter("gamma_n").as_double();
         double beta_n  = get_parameter("beta_n").as_double();
 
@@ -200,29 +200,33 @@ public:
         cpe_params_ = new ContactPointEstimatorParams();
         sne_params_ = new SurfaceNormalEstimatorParams();
 
-		sim_ = sim;
+		//sim_ = sim;
+		// if(sim_)
+		// {
+		// 	RCLCPP_INFO(get_logger(), "Running in simulation mode, subscribing to ft_sensor_sim topic");
+		// 	topicSub_FT_Sensor_Sim_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
+		// 		"/filtered_ee_wrench_wrt_sensor_frame",
+		// 		10,
+		// 		std::bind(&ContactPointEstimationNode::topicCallback_FT_Sensor_Sim, this, std::placeholders::_1));
+		// }
+		// else
+		// {
+		// 	 RCLCPP_INFO(get_logger(), "Running in real mode, subscribing to ft_compensated topic");
+		// 	topicSub_FT_compensated_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
+		// 		"/filtered_ee_wrench_wrt_sensor_frame", 
+		// 		10, 
+		// 		std::bind(&ContactPointEstimationNode::topicCallback_FT_compensated, this, std::placeholders::_1));
+		// }
+		
+		topicSub_FT_compensated_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
+			"/filtered_ee_wrench_wrt_sensor_frame", 
+			10, 
+			std::bind(&ContactPointEstimationNode::topicCallback_FT_compensated, this, std::placeholders::_1));
 
-		if(sim_)
-		{
-			RCLCPP_INFO(get_logger(), "Running in simulation mode, subscribing to ft_sensor_sim topic");
-			topicSub_FT_Sensor_Sim_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
-				"/filtered_ee_wrench_wrt_sensor_frame",
-				10,
-				std::bind(&ContactPointEstimationNode::topicCallback_FT_Sensor_Sim, this, std::placeholders::_1));
-		}
-		else
-		{
-			 RCLCPP_INFO(get_logger(), "Running in real mode, subscribing to ft_compensated topic");
-			topicSub_FT_compensated_ = this->create_subscription<geometry_msgs::msg::WrenchStamped>(
-				"ft_compensated", 
-				10, 
-				std::bind(&ContactPointEstimationNode::topicCallback_FT_compensated, this, std::placeholders::_1));
-		}
-
-		topicSub_Twist_FT_Sensor_ = this->create_subscription<geometry_msgs::msg::Twist>(
+		topicSub_Twist_tcp_end_effector_ = this->create_subscription<geometry_msgs::msg::Twist>(
 			"/filtered_cartesian_velocity_base_frame_feedback",
 			10,
-			std::bind(&ContactPointEstimationNode::topicCallback_Twist_FT_Sensor, this, std::placeholders::_1));
+			std::bind(&ContactPointEstimationNode::topicCallback_Twist_TCP_end_effector, this, std::placeholders::_1));
 
         cpe_params_->setGammaR(gamma_r);
         cpe_params_->setKappaR(kappa_r);
@@ -433,7 +437,29 @@ public:
 	// 	m_received_ft = true;
 	// }
 
-	void topicCallback_FT_Sensor_Sim(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
+	// void topicCallback_FT_Sensor_Sim(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
+	// {
+	// 	m_ft_mutex.lock();
+	// 	// ? Add timestamp and frame_id to the simulated wrench message
+	// 	m_ft_compensated = *msg;
+	// 	m_ft_compensated.header.stamp = this->now();
+	// 	m_ft_compensated.header.frame_id = "ur_ati_45_sensor_link";
+	// 	// m_ft_compensated.wrench = *msg;
+	// 	m_ft_mutex.unlock();
+
+	// 	m_received_ft = true;
+
+	// 	if (abs(msg ->wrench.force.z) < 0.01)
+	// 	{
+	// 		no_contact_ = true;
+	// 	}
+	// 	else
+	// 	{
+	// 		no_contact_ = false;
+	// 	}
+	// }
+
+	void topicCallback_FT_compensated(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
 	{
 		m_ft_mutex.lock();
 		// ? Add timestamp and frame_id to the simulated wrench message
@@ -455,31 +481,22 @@ public:
 		}
 	}
 
-	void topicCallback_FT_compensated(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
-	{
-		m_ft_mutex.lock();
-		m_ft_compensated = *msg;
-		m_ft_mutex.unlock();
-
-		m_received_ft = true;
-	}
-
-    // void topicCallback_Twist_FT_Sensor(const geometry_msgs::TwistStampedPtr &msg)
+    // void topicCallback_Twist_TCP_end_effector(const geometry_msgs::TwistStampedPtr &msg)
     // {
     // 	m_twist_mutex.lock();
-    // 	m_twist_ft_sensor = *msg;
+    // 	m_twist_tcp_end_effector = *msg;
     // 	m_twist_mutex.unlock();
 
     //     m_received_twist = true;
     // }
-	void topicCallback_Twist_FT_Sensor(const geometry_msgs::msg::Twist::SharedPtr msg)
+	void topicCallback_Twist_TCP_end_effector(const geometry_msgs::msg::Twist::SharedPtr msg)
 	{
 		m_twist_mutex.lock();
 		// ? modified for a twist message with no header, add timestamp and frame_id
-		m_twist_ft_sensor.header.stamp = this->now();
-		m_twist_ft_sensor.header.frame_id = "ur_eef_tip_link";
-		m_twist_ft_sensor.twist = *msg;
-		// m_twist_ft_sensor = *msg;
+		m_twist_tcp_end_effector.header.stamp = this->now();
+		m_twist_tcp_end_effector.header.frame_id = "ur_eef_tip_link";
+		m_twist_tcp_end_effector.twist = *msg;
+		// m_twist_tcp_end_effector = *msg;
 		m_twist_mutex.unlock();
 
 		m_received_twist = true;
@@ -604,7 +621,7 @@ public:
 				static rclcpp::Time t = this->now();
 				if ((this->now() - t).seconds() > 1.0)
 				{
-					RCLCPP_ERROR(get_logger(), "Haven't received FT sensor measurements");
+					RCLCPP_ERROR(get_logger(), "Haven't received end-effector TCP twist measurements");
 					t = this->now();
 				}
     		}
@@ -619,7 +636,7 @@ public:
     			m_twist_mutex.lock();
 				if(!no_contact_)
 				{
-    				sne_->update(m_twist_ft_sensor);
+    				sne_->update(m_twist_tcp_end_effector);
 				}
     			m_twist_mutex.unlock();
 
@@ -635,7 +652,7 @@ public:
 private:
 
     geometry_msgs::msg::WrenchStamped m_ft_compensated;
-    geometry_msgs::msg::TwistStamped m_twist_ft_sensor;
+    geometry_msgs::msg::TwistStamped m_twist_tcp_end_effector;
 
     boost::mutex m_ft_mutex;
     boost::mutex m_twist_mutex;
@@ -649,7 +666,7 @@ private:
     bool m_run_estimator;
 	bool no_contact_ = true;
 
-	bool sim_;
+	// bool sim_;
     /// declaration of topics to publish
 	// ? MODIFIED VERSION TO WORK WITH ROS2
 	rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr topicPub_ContactPointEstimate_;
@@ -662,14 +679,14 @@ private:
     /// declaration of topics to subscribe, callback is called for new messages arriving
 	// ? MODIFIED VERSION TO WORK WITH ROS2
 	rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr topicSub_FT_compensated_;
-	// rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr topicSub_Twist_FT_Sensor_;
+	// rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr topicSub_Twist_tcp_end_effector_;
 	// ? Modified to work with kinematic tools
-	rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr topicSub_Twist_FT_Sensor_;
+	rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr topicSub_Twist_tcp_end_effector_;
 
 	rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr topicSub_FT_Sensor_Sim_;
 
     // ros::Subscriber topicSub_FT_compensated_;
-    // ros::Subscriber topicSub_Twist_FT_Sensor_;
+    // ros::Subscriber topicSub_Twist_tcp_end_effector_;
 
     /// declaration of service servers
 	// ? MODIFIED VERSION TO WORK WITH ROS2
