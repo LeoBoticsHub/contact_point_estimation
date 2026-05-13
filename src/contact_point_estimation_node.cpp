@@ -500,6 +500,16 @@ public:
 		m_twist_mutex.unlock();
 
 		m_received_twist = true;
+
+		if (abs(msg->linear.x) < 0.001 || abs(msg->linear.y) < 0.001 || abs(msg->linear.z) < 0.001)
+		{
+			no_commanded_motion_ = true;
+		}
+		else
+		{
+			no_commanded_motion_ = false;
+		}
+
 	}
 
     // bool srvCallback_Start(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
@@ -634,7 +644,7 @@ public:
     		else
     		{
     			m_twist_mutex.lock();
-				if(!no_contact_)
+				if(!no_contact_ && !no_commanded_motion_)
 				{
     				sne_->update(m_twist_tcp_end_effector);
 				}
@@ -665,6 +675,7 @@ private:
 
     bool m_run_estimator;
 	bool no_contact_ = true;
+	bool no_commanded_motion_ = true;
 
 	// bool sim_;
     /// declaration of topics to publish
