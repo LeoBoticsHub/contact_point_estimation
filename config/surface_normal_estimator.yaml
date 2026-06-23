@@ -5,7 +5,10 @@ contact_point_estimation_node:
     beta_n: 0.1 # 0.1 [fogetting factor] At 500 Hz, max beta is 500 to avoid instability
 
     # initial surface normal (in base frame)
-    initial_n: [0.0, 0.0, 1.0] #  [0.3420, 0.0, 0.9397] #  [-0.4226, 0.0, 0.9063] #  [0.019999, -0.009999, 0.999750] #    [0.0, 0.0, 1.0] #  [-0.707, 0.0, 0.707] # [0.35, 0.35, 0.866] # 
+    # initial_n: [0.0, 0.0, 1.0] #  [0.3420, 0.0, 0.9397] #  [-0.4226, 0.0, 0.9063] #  [0.019999, -0.009999, 0.999750] #    [0.0, 0.0, 1.0] #  [-0.707, 0.0, 0.707] # [0.35, 0.35, 0.866] # 
 
     # update frequency of surface normal estimator [Hz]
     sne_update_frequency: 500.0
+
+    # subscriber Topics
+    normal_initialization_wrt_base_frame_subscriber_topic: "normal_initialization_wrt_base_frame" # [string] Topic where the initial estimate of the normal expressed in base_frame is published 

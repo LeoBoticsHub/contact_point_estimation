@@ -45,10 +45,13 @@
 #include <contact_point_estimation/SurfaceNormalEstimatorParams.h>
 
 #include <geometry_msgs/msg/wrench_stamped.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
 #include <geometry_msgs/msg/vector3_stamped.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 
+#define BOOST_BIND_GLOBAL_PLACEHOLDERS
 #include <boost/thread.hpp>
 #include <boost/bind.hpp>
 
@@ -61,7 +64,8 @@ public:
 	ContactPointEstimationNode() : Node("contact_point_estimation_node"),
 		m_received_ft(false),
 		m_received_twist(false),
-		m_run_estimator(false)
+		m_run_estimator(false),
+		normal_initialized_(false)
     // ros::NodeHandle n_;
 	{
 		// ? PARAMETERS TO WORK IN ROS2 
@@ -81,9 +85,10 @@ public:
 		// declare_parameter<bool>("sim", true);
 		declare_parameter<double>("gamma_n", 0.0);
 		declare_parameter<double>("beta_n", 0.0);
-		declare_parameter<std::vector<double>>("initial_n", {0.0084,-0.0577,0.9983});
+		// declare_parameter<std::vector<double>>("initial_n", {0.0084,-0.0577,0.9983});
 		declare_parameter<double>("cpe_update_frequency", 650.0);
 		declare_parameter<double>("sne_update_frequency", 150.0);
+		declare_parameter<std::string>("normal_initialization_wrt_base_frame_subscriber_topic", "");
 		
 		// ? PUBLISHERS AND SUBSCRIBERS TO WORK IN ROS2
 		topicPub_ContactPointEstimate_ = this->create_publisher<geometry_msgs::msg::PointStamped>("contact_point_estimate", 10);
@@ -179,22 +184,25 @@ public:
 
         auto initial_r_vec =
             get_parameter("initial_r").as_double_array();
-        auto initial_n_vec =
-            get_parameter("initial_n").as_double_array();
+        // auto initial_n_vec =
+        //     get_parameter("initial_n").as_double_array();
 
-        if (initial_r_vec.size() != 3 || initial_n_vec.size() != 3)
+		std::string normal_initialization_wrt_base_frame_subscriber_topic = get_parameter("normal_initialization_wrt_base_frame_subscriber_topic").as_string();
+
+        //if (initial_r_vec.size() != 3 || initial_n_vec.size() != 3)
+		if (initial_r_vec.size() != 3)
         {
             RCLCPP_ERROR(get_logger(), "Initial vectors must have size 3");
             return false;
         }
 
         Vector3d initial_r;
-        Vector3d initial_n;
+        //Vector3d initial_n;
 
         for (int i = 0; i < 3; ++i)
         {
             initial_r(i) = initial_r_vec[i];
-            initial_n(i) = initial_n_vec[i];
+            //initial_n(i) = initial_n_vec[i];
         }
 
         cpe_params_ = new ContactPointEstimatorParams();
@@ -227,6 +235,18 @@ public:
 			"/filtered_cartesian_velocity_base_frame_feedback",
 			10,
 			std::bind(&ContactPointEstimationNode::topicCallback_Twist_TCP_end_effector, this, std::placeholders::_1));
+		
+		if (!normal_initialization_wrt_base_frame_subscriber_topic.empty())
+		{
+			topicSub_initial_n_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
+				normal_initialization_wrt_base_frame_subscriber_topic, 
+				10, 
+				std::bind(&ContactPointEstimationNode::topicCallback_initial_n, this, std::placeholders::_1));
+		}
+		else
+		{
+			RCLCPP_WARN(get_logger(), "normal_initialization_wrt_base_frame_subscriber_topic is empty; initial normal vector subscriber not created");
+		}
 
         cpe_params_->setGammaR(gamma_r);
         cpe_params_->setKappaR(kappa_r);
@@ -236,12 +256,12 @@ public:
 
         sne_params_->setGammaN(gamma_n);
         sne_params_->setBetaN(beta_n);
-        sne_params_->setInitialN(initial_n);
+        // sne_params_->setInitialN(initial_n);
         sne_params_->setUpdateFrequency(sne_freq);
 		// ? print gamma_n and beta_n
-		RCLCPP_INFO(get_logger(), "Loaded parameters: gamma_r=%.2f, kappa_r=%.2f, beta_r=%.2f, gamma_n=%.2f, beta_n=%.2f, cpe_freq=%.2f, sne_freq=%.2f", gamma_r, kappa_r, beta_r, gamma_n, beta_n, cpe_freq, sne_freq);
+		RCLCPP_INFO(get_logger(), "Loaded parameters: gamma_r=%.2f, kappa_r=%.2f, beta_r=%.2f, gamma_n=%.2f, beta_n=%.2f, cpe_freq=%.2f, sne_freq=%.2f, normal_initialization_wrt_base_frame_subscriber_topic=%s", gamma_r, kappa_r, beta_r, gamma_n, beta_n, cpe_freq, sne_freq, normal_initialization_wrt_base_frame_subscriber_topic.c_str());
         cpe_ = new ContactPointEstimator(cpe_params_);
-        sne_ = new SurfaceNormalEstimator(sne_params_);
+        // sne_ = new SurfaceNormalEstimator(sne_params_);
 
         return true;
     }
@@ -512,6 +532,22 @@ public:
 
 	}
 
+	void topicCallback_initial_n(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
+	{
+		if (msg->data.size() != 3)
+		{
+			RCLCPP_ERROR(get_logger(), "Initial normal vector must have size 3");
+			return;
+		}
+		Vector3d initial_n = Eigen::Vector3d(msg->data[0], msg->data[1], msg->data[2]);
+
+		sne_params_->setInitialN(initial_n);
+		sne_ = new SurfaceNormalEstimator(sne_params_);
+		normal_initialized_ = true;
+
+		RCLCPP_INFO(get_logger(), "Initial normal vector set to: [%.6f, %.6f, %.6f]", initial_n.x(), initial_n.y(), initial_n.z());
+	}
+
     // bool srvCallback_Start(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
 	// {
     // 	ROS_INFO("Starting cpe + sne node");
@@ -539,6 +575,13 @@ public:
             RCLCPP_ERROR(get_logger(), "Parameter loading failed");
             return;
         }
+
+		// wait for the initial normal vector to be set
+		while (!normal_initialized_)
+		{
+			RCLCPP_INFO(get_logger(), "Waiting for initial normal vector to be set...");
+			rclcpp::sleep_for(std::chrono::milliseconds(100));
+		}
 
 		cpe_->reset();
 		sne_->reset();
@@ -693,6 +736,7 @@ private:
 	// rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr topicSub_Twist_tcp_end_effector_;
 	// ? Modified to work with kinematic tools
 	rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr topicSub_Twist_tcp_end_effector_;
+	rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr topicSub_initial_n_;
 
 	rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr topicSub_FT_Sensor_Sim_;
 
@@ -716,6 +760,8 @@ private:
 
 	SurfaceNormalEstimatorParams *sne_params_{nullptr};
 	SurfaceNormalEstimator *sne_{nullptr};
+
+	bool normal_initialized_;
 };
 
 
