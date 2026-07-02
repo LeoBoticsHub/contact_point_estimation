@@ -239,9 +239,10 @@ public:
 		if (!normal_initialization_wrt_base_frame_subscriber_topic.empty())
 		{
 			topicSub_initial_n_ = this->create_subscription<std_msgs::msg::Float64MultiArray>(
-				normal_initialization_wrt_base_frame_subscriber_topic, 
-				10, 
+				normal_initialization_wrt_base_frame_subscriber_topic,
+				10,
 				std::bind(&ContactPointEstimationNode::topicCallback_initial_n, this, std::placeholders::_1));
+			RCLCPP_INFO(get_logger(), "Subscribed to initial normal topic: %s", normal_initialization_wrt_base_frame_subscriber_topic.c_str());
 		}
 		else
 		{
@@ -480,8 +481,7 @@ public:
 	// }
 
 	void topicCallback_FT_compensated(const geometry_msgs::msg::WrenchStamped::SharedPtr msg)
-	{
-		m_ft_mutex.lock();
+	{		m_ft_mutex.lock();
 		// ? Add timestamp and frame_id to the simulated wrench message
 		m_ft_compensated = *msg;
 		m_ft_compensated.header.stamp = this->now();
@@ -534,18 +534,24 @@ public:
 
 	void topicCallback_initial_n(const std_msgs::msg::Float64MultiArray::SharedPtr msg)
 	{
-		if (msg->data.size() != 3)
+		if(!normal_initialized_)
 		{
-			RCLCPP_ERROR(get_logger(), "Initial normal vector must have size 3");
-			return;
+			if (msg->data.size() != 3)
+			{
+				RCLCPP_ERROR(get_logger(), "Initial normal vector must have size 3");
+				return;
+			}
+			Vector3d initial_n = Eigen::Vector3d(msg->data[0], msg->data[1], msg->data[2]);
+
+			sne_params_->setInitialN(initial_n);
+			sne_ = new SurfaceNormalEstimator(sne_params_);
+			normal_initialized_ = true;
+
+			RCLCPP_INFO(get_logger(), "Initial normal vector set to: [%.6f, %.6f, %.6f]", initial_n.x(), initial_n.y(), initial_n.z());
+
+			// start the SNE thread only after the initial normal vector has been set
+			m_sne_thread = boost::thread(boost::bind(&ContactPointEstimationNode::SNEThreadFunction, this));
 		}
-		Vector3d initial_n = Eigen::Vector3d(msg->data[0], msg->data[1], msg->data[2]);
-
-		sne_params_->setInitialN(initial_n);
-		sne_ = new SurfaceNormalEstimator(sne_params_);
-		normal_initialized_ = true;
-
-		RCLCPP_INFO(get_logger(), "Initial normal vector set to: [%.6f, %.6f, %.6f]", initial_n.x(), initial_n.y(), initial_n.z());
 	}
 
     // bool srvCallback_Start(std_srvs::Empty::Request &req, std_srvs::Empty::Response &res)
@@ -576,12 +582,18 @@ public:
             return;
         }
 
-		// wait for the initial normal vector to be set
-		while (!normal_initialized_)
-		{
-			RCLCPP_INFO(get_logger(), "Waiting for initial normal vector to be set...");
-			rclcpp::sleep_for(std::chrono::milliseconds(100));
-		}
+		// // wait for the initial normal vector to be set
+		// while (!normal_initialized_)
+		// {
+		// 	RCLCPP_INFO(get_logger(), "Waiting for initial normal vector to be set...");
+		// 	rclcpp::sleep_for(std::chrono::milliseconds(5000));
+		// }
+
+		// set a dummy initial normal vector 
+		Vector3d initial_n = Eigen::Vector3d(0.0, 0.0, 1.0);
+		sne_params_->setInitialN(initial_n);
+
+		sne_ = new SurfaceNormalEstimator(sne_params_);
 
 		cpe_->reset();
 		sne_->reset();
@@ -589,7 +601,9 @@ public:
 		m_run_estimator = true;
 
 		m_cpe_thread = boost::thread(boost::bind(&ContactPointEstimationNode::CPEThreadFunction, this));
-		m_sne_thread = boost::thread(boost::bind(&ContactPointEstimationNode::SNEThreadFunction, this));
+		
+		// Moving the SNE thread in the topicCallback_initial_n function to ensure that the SNE thread is only started after the initial normal vector has been set
+		// m_sne_thread = boost::thread(boost::bind(&ContactPointEstimationNode::SNEThreadFunction, this));
 
 	}
 
